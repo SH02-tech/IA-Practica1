@@ -8,3 +8,7 @@ cmake_install.cmake
 build/
 Makefile
 .vscode
+.cmake/
+Makefile.tmp
+compile_commands.json
+propio.md
