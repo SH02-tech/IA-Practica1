@@ -41,8 +41,32 @@ struct Pos2D {
 
 
 class ComportamientoJugador : public Comportamiento{
+  private: // Atributos
+    static const int MAX_DEPTH = 4;
+    static const int NUM_SEEN = MAX_DEPTH * MAX_DEPTH - 1;
+
+    static const int MAX_REL_LOSS = 920;
+    const float ADD_FACTOR = 0.75;
+    const float FLEXITY_FACTOR = 1.7;
+    
+    // Declarar aquí las variables de estado
+    Action last_action;
+    // Orientacion brujula.
+    state current_state;
+
+    bool bikini_on, shoes_on;
+    
+    bool bien_situado;
+
+    vector<vector<Box>> virtual_map;
+    vector<vector<int>> loss_map;
+
+    map<unsigned char, int> loss_base;
+
+    int size;
 
   public:
+
     ComportamientoJugador(unsigned int size) : Comportamiento(size){
 
       // Constructor de la clase
@@ -50,7 +74,7 @@ class ComportamientoJugador : public Comportamiento{
       last_action = actIDLE;
       
       //Orientacion = norte;
-      current_state.fil = current_state.col = size;
+      current_state.fil = current_state.col = 1.5*size;
       current_state.brujula = norte;
 
       bien_situado = false;
@@ -67,22 +91,22 @@ class ComportamientoJugador : public Comportamiento{
         loss_map.push_back(linea);
       }
 
-      loss_base['B'] = 20;
-      loss_base['A'] = 25;
+      loss_base['B'] = 35;
+      loss_base['A'] = 100;
       loss_base['P'] = 1e5;
       loss_base['S'] = 5;
       loss_base['T'] = 6;
       loss_base['M'] = 1e5;
-      loss_base['K'] = 0;
-      loss_base['D'] = 0;
-      loss_base['X'] = 1;
-      loss_base['G'] = 0;
-      loss_base['?'] = 1;
+      loss_base['K'] = -20;
+      loss_base['D'] = -20;
+      loss_base['X'] = 5;
+      loss_base['G'] = -20;
+      loss_base['?'] = 2;
 
       // Creamos un mapa propio.
 
-      for (int i=0; i<2*size; ++i) {
-        vector<Box> line(2*size, Box('?', 0));
+      for (int i=0; i<3*size; ++i) {
+        vector<Box> line(3*size, Box('?', 0));
         virtual_map.push_back(line);
       }
     }
@@ -93,53 +117,40 @@ class ComportamientoJugador : public Comportamiento{
     Action think(Sensores sensores);
     int interact(Action accion, int valor);
 
-  private:
+  private: // Métodos privados
 
-  static const int MAX_DEPTH = 4;
-  static const int NUM_SEEN = MAX_DEPTH * MAX_DEPTH - 1;
+    // Status
 
-  static const int MAX_REL_LOSS = 900;
-  const float MULT_FACTOR = 1.25;
-  
-  // Declarar aquí las variables de estado
-  Action last_action;
-  // Orientacion brujula.
-  state current_state;
+    void printStatus(const Sensores &sensors);
+    void updateStatus(const Sensores &sensors);
 
-  bool bikini_on, shoes_on;
-  
-  bool bien_situado;
+    // Mapa Resultados
 
-  vector<vector<Box>> virtual_map;
-  vector<vector<int>> loss_map;
+    void fillViewingMap(const Sensores &sensors);
+    void updateRealMap(Pos2D actual_pos);
+    Pos2D findNewBox(int num, Orientacion ori);
+    Pos2D findRelativeDisplacement(int num, Orientacion ori);
 
-  map<unsigned char, int> loss_base;
+    // Orientation decision. 
 
-  int size;
+    Orientacion bestDirection(const Sensores &sensors);
+    Orientacion mostUnknownDirection(int &num_unreachable);
+    int countReachableUnknownBoxes(int max_depth, Orientacion ori);
 
+    Action getAction(Orientacion orientation);
 
-  // Métodos privados
+    // Mapa Loss
 
-  void printStatus(const Sensores &sensors);
-  void updateStatus(const Sensores &sensors);
+    int getBoxLoss(Pos2D pos, Orientacion orientation, int battery_level);
+    void fillViewingLoss();
 
-  void fillViewingMap(const Sensores &sensors);
-  Pos2D findRelativeDisplacement(int num);
-  Orientacion bestDirection(const Sensores &sensors);
+    // Mapa Virtual
 
-  int getBoxLoss(Pos2D pos, Orientacion orientation);
-  void fillViewingLoss();
-
-  Action getAction(Orientacion orientation);
-
-  void fillVirtualMap(const Sensores &sensors);
-  void realToVirtualMap(const Sensores &sensors);
-  void resetVirtualMap();
-
-  void updateRealMap(const Sensores &sensors);
-  
-  void updateLossMap(const Sensores &sensors);
-  void resetLossMap();
+    void fillVirtualMap(const Sensores &sensors);
+    void realToVirtualMap(const Sensores &sensors);
+    void resetVirtualMap();
+    void updateLossMap(Pos2D actual_pos);
+    void resetLossMap();
 };
 
 #endif
