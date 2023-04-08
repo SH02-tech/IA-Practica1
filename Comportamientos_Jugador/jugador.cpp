@@ -10,11 +10,11 @@ using namespace std;
 Action ComportamientoJugador::think(Sensores sensores){
 	Action accion = actIDLE;
 
-	// Imprimimos datos.
+	// Status
 
 	printStatus(sensores);
 
-	// Rellenamos información del entorno. 
+	// Update state based on previous action. 
 
 	if (!sensores.reset) {
 		updateStatus(sensores);
@@ -30,8 +30,14 @@ Action ComportamientoJugador::think(Sensores sensores){
 		current_state.fil = current_state.col = 1.5*size;
 		current_state.brujula = norte;
 
+		num_giros_seguidos = 0;
+
 		bikini_on = shoes_on = false;
+
+		interesting_points.clear();
 	}
+
+	// Environment analysis
 
 	if ((sensores.terreno[0] == 'G' and !bien_situado) or sensores.nivel == 0) { // Casilla de posicionamiento o bien en nivel 0. 
 		bien_situado = true;
@@ -47,9 +53,15 @@ Action ComportamientoJugador::think(Sensores sensores){
 		current_state.fil = sensores.posF;
 		current_state.col = sensores.posC;
 		current_state.brujula = sensores.sentido;
-	} else if (sensores.terreno[0] == 'K' && !bikini_on) {
+
+		interesting_points.clear();
+	} 
+	
+	if (sensores.terreno[0] == 'K' && !bikini_on) {
 		bikini_on = true;
-	} else if (sensores.terreno[0] == 'D' && !shoes_on) {
+	} 
+	
+	if (sensores.terreno[0] == 'D' && !shoes_on) {
 		shoes_on = true;
 	}
 
@@ -58,14 +70,19 @@ Action ComportamientoJugador::think(Sensores sensores){
 	if(bien_situado) {
 		fillViewingMap(sensores);
 	} 
+
+	vector<Pos2D> interesting_things = interestingViewingThings(sensores);
+
+	for (Pos2D &pos: interesting_things) {
+		addInterestingThing(pos);
+	}
 	
-	// 4
+	// New action decision.  
 
 	Orientacion preferred_direction = bestDirection(sensores);
 	accion = getAction(preferred_direction);
 
-	// if (accion == actFORWARD) // Dejamos rastro de función de pérdida. 
-		fillViewingLoss();
+	fillViewingLoss();
 	
 	last_action = accion;
 
@@ -205,12 +222,10 @@ Orientacion ComportamientoJugador::bestDirection(const Sensores &sensores) {
 		Orientacion local_orientation = static_cast<Orientacion>(i);
 		int loss = getBoxLoss(new_pos, local_orientation, sensores.bateria);
 
-		if (local_orientation == current_state.brujula && 
-			(sensores.superficie[1] == 'l' || sensores.superficie[2] == 'l' || sensores.superficie[3] == 'l' || sensores.superficie[1] == 'a' || sensores.superficie[2] == 'a' || sensores.superficie[3] == 'a')
-			)
+		if (local_orientation == current_state.brujula && isObstacleFront(sensores))
 			loss = 1e4;
 
-		if (loss < min_loss) {
+ 		if (loss < min_loss) {
 			min_loss = loss;
 			best_pos = new_pos;
 			orientation = local_orientation;
@@ -231,11 +246,34 @@ Orientacion ComportamientoJugador::bestDirection(const Sensores &sensores) {
 	new_pos.x = current_state.fil - vertical;
 	new_pos.y = current_state.col + horizontal;
 
-	if (getBoxLoss(new_pos, most_unknown, sensores.bateria) < FLEXITY_FACTOR*getBoxLoss(best_pos, orientation, sensores.bateria) && num_unreachable > 0) {
+	int new_box_loss = getBoxLoss(new_pos, most_unknown, sensores.bateria);
+
+	if (most_unknown == current_state.brujula && isObstacleFront(sensores))
+		new_box_loss = 1e4;
+
+	if ((new_box_loss < FLEXITY_FACTOR*min_loss) && num_unreachable > 0) {
 		orientation = most_unknown;
 		best_pos = new_pos;
+		min_loss = new_box_loss;
 	}
-	
+
+	if (!interesting_points.empty()) {
+		Pos2D interesting_point = interesting_points[0];
+		Orientacion interesting_ori = findOrientation(interesting_point);
+		Pos2D next_pos = findNewBox(2, interesting_ori);
+
+		int interesting_box_loss = getBoxLoss(next_pos, interesting_ori, sensores.bateria);
+
+		if (interesting_ori == current_state.brujula && isObstacleFront(sensores))
+			interesting_box_loss = 1e4;
+
+		if (interesting_box_loss < FLEXITY_FACTOR*min_loss) {
+			orientation = interesting_ori;
+			best_pos = next_pos;
+			min_loss = interesting_box_loss;
+		}
+		
+	}
 
 	return orientation;
 }
@@ -259,6 +297,37 @@ Orientacion ComportamientoJugador::mostUnknownDirection(int &num_unreachable) {
 
 	num_unreachable = max_unknown;
 	return best_orientation;
+}
+
+Orientacion ComportamientoJugador::findOrientation(Pos2D pos) {
+	Orientacion ori = norte;
+	Pos2D displacement(pos.x - current_state.fil, pos.y - current_state.col);
+
+	if (displacement.x < 0) {
+		if (displacement.y < 0) {
+			ori = noroeste;
+		} else if (displacement.y > 0) {
+			ori = noreste;
+		} else {
+			ori = norte;
+		}
+	} else if (displacement.x > 0) {
+		if (displacement.y < 0) {
+			ori = suroeste;
+		} else if (displacement.y > 0) {
+			ori = sureste;
+		} else {
+			ori = sur;
+		}
+	} else {
+		if (displacement.y < 0) {
+			ori = oeste;
+		} else {
+			ori = este;
+		}
+	}
+
+	return ori;
 }
 
 int ComportamientoJugador::countReachableUnknownBoxes(int max_depth, Orientacion ori) {
@@ -325,6 +394,21 @@ int ComportamientoJugador::countReachableUnknownBoxes(int max_depth, Orientacion
 	return count;
 }
 
+bool ComportamientoJugador::isObstacleFront(const Sensores &sensors) {
+	bool is_front = false;
+
+	int size = sensors.superficie.size();
+
+	for (int i=0; i<size && !is_front; ++i) {
+		unsigned char character = sensors.superficie[i];
+		
+		if (character == 'l' || character == 'a')
+			is_front = true;
+	}
+
+	return is_front;
+}
+
 int ComportamientoJugador::getBoxLoss(Pos2D pos, Orientacion orientation, int battery_level) {
 	int result = 0;
 
@@ -339,15 +423,35 @@ int ComportamientoJugador::getBoxLoss(Pos2D pos, Orientacion orientation, int ba
 	the_base_loss = loss_base[type];
 
 	if (type == 'B' && shoes_on)
-		the_base_loss = 28;
+		the_base_loss = 60;
 	else if (type == 'A' && bikini_on)
-		the_base_loss = 30;
-	else if (type == 'G' && bien_situado)
-		the_base_loss = 5;
-	else if (type == 'D' && shoes_on)
-		the_base_loss = 5;
-	else if (type == 'K' && bikini_on)
-		the_base_loss = 5;
+		the_base_loss = 70;
+	else if ((type == 'G' && bien_situado) || (type == 'D' && shoes_on) || (type == 'K' && bikini_on) || (type == 'X' && battery_level > 1000)) {
+		int sum = 0;
+		int count = 0;
+
+		for (int i=0; i<8; ++i) {
+			float angle = (2 * PI * i) / 8;
+
+			int horizontal = round(sin(angle));
+			int vertical = round(cos(angle)); 
+
+			Pos2D new_pos;
+
+			new_pos.x = current_state.fil - vertical;
+			new_pos.y = current_state.col + horizontal;
+
+			unsigned char neighbor_type = virtual_map[new_pos.x][new_pos.y].type;
+			int local_loss = loss_base[neighbor_type];
+
+			if (local_loss < 1e5) {
+				sum += local_loss;
+				++count;
+			}
+		}
+
+		the_base_loss = sum / count;
+	}
 
 	// Ajustamos pérdida relativa. 
 
@@ -360,17 +464,17 @@ int ComportamientoJugador::getBoxLoss(Pos2D pos, Orientacion orientation, int ba
 	// Ajustamos pérdida por rotación. 
 
 	Action action = getAction(orientation);
-	unsigned char current_type = virtual_map[pos.x][pos.y].type;
+	unsigned char current_type = virtual_map[current_state.fil][current_state.col].type;
 
 	switch (action) {
 		case actFORWARD:
 
 			switch(current_type) {
 				case 'A':
-					the_rotation_loss = (bikini_on ? 8 : 15);
+					the_rotation_loss = (bikini_on ? 70 : 90);
 					break;
 				case 'B':
-					the_rotation_loss = (shoes_on ? 10 : 13);
+					the_rotation_loss = (shoes_on ? 30 : 55);
 					break;
 				case 'T':
 					the_rotation_loss = 1;
@@ -384,16 +488,16 @@ int ComportamientoJugador::getBoxLoss(Pos2D pos, Orientacion orientation, int ba
 		case actTURN_BR:
 			switch(current_type) {
 				case 'A':
-					the_rotation_loss = (bikini_on ? 27 : 33);
+					the_rotation_loss = (bikini_on ? 75 : 90);
 					break;
 				case 'B':
-					the_rotation_loss = (shoes_on ? 18 : 23);
+					the_rotation_loss = (shoes_on ? 50 : 80);
 					break;
 				case 'T':
-					the_rotation_loss = 12;
+					the_rotation_loss = 5;
 					break;
 				default:
-					the_rotation_loss = 11;
+					the_rotation_loss = 5;
 					break;
 			}
 			break;
@@ -401,16 +505,16 @@ int ComportamientoJugador::getBoxLoss(Pos2D pos, Orientacion orientation, int ba
 		case actTURN_SR:
 			switch(current_type) {
 				case 'A':
-					the_rotation_loss = (bikini_on ? 27 : 40);
+					the_rotation_loss = (bikini_on ? 80 : 100);
 					break;
 				case 'B':
-					the_rotation_loss = (shoes_on ? 18 : 23);
+					the_rotation_loss = (shoes_on ? 50 : 75);
 					break;
 				case 'T':
-					the_rotation_loss = 17;
+					the_rotation_loss = 7;
 					break;
 				default:
-					the_rotation_loss = 16;
+					the_rotation_loss = 7;
 					break;
 			}
 			break;
@@ -419,21 +523,33 @@ int ComportamientoJugador::getBoxLoss(Pos2D pos, Orientacion orientation, int ba
 			break;
 	}
 
+	if (action != actFORWARD && num_giros_seguidos > 0)
+		the_rotation_loss += 10 * (num_giros_seguidos - 1); // penalización por demasiados giros seguidos. 
+
 	result = the_base_loss + the_loss + the_rotation_loss;
 
 	return result;
 }
 
 void ComportamientoJugador::fillViewingLoss() {
-
-	Pos2D new_pos = findNewBox(1, current_state.brujula);
-
-	
+	/*
 	for (int i=0; i<NUM_SEEN; ++i) {
 		Pos2D new_pos = findNewBox(i, current_state.brujula);
 		int depth = max(abs(new_pos.x - current_state.fil), abs(new_pos.y - current_state.col));
 
 		virtual_map[new_pos.x][new_pos.y].rel_loss += (MAX_DEPTH - depth);
+	}
+	*/
+
+	for (int depth=0; depth<MAX_DEPTH; ++depth) {
+		for (int i=current_state.fil-depth; i<=current_state.fil+depth; ++i) {
+			for (int j=current_state.col-depth; j<=current_state.col+depth; ++j) {
+				if (0 <= min(i,j) && max(i,j) < virtual_map.size()) {
+					if (virtual_map[i][j].type != '?')
+						virtual_map[i][j].rel_loss++;
+				}
+			}
+		}
 	}
 }
 
@@ -447,17 +563,17 @@ Action ComportamientoJugador::getAction(Orientacion orientation) {
 			action = actFORWARD;
 			break;
 		case 1:
-		case 2:
 			action = actTURN_SR;
 			break;
+		case 2:
 		case 3:
 			action = actTURN_BR;
 			break;
 		case 4:
 		case 5:
+		case 6:
 			action = actTURN_BL;
 			break;
-		case 6:
 		case 7:
 			action = actTURN_SL;
 			break;
@@ -567,7 +683,12 @@ void ComportamientoJugador::updateStatus(const Sensores &sensores) {
 		current_state.brujula = sensores.sentido;
 	}
 
-	
+	if (last_action == actFORWARD)
+		num_giros_seguidos = 0;
+	else
+		++num_giros_seguidos;
+
+	updateInterestingThings();
 }
 
 void ComportamientoJugador::updateRealMap(Pos2D actual_pos) {
@@ -633,4 +754,54 @@ void ComportamientoJugador::resetLossMap() {
 			loss_map[i][j] = 0;
 		}
 	}
+}
+
+vector<Pos2D> ComportamientoJugador::interestingViewingThings(const Sensores &sensors) {
+	vector<Pos2D> positions;
+
+	for (int i=0; i<NUM_SEEN; ++i) {
+		unsigned char type = sensors.terreno[i];
+
+		if ((type == 'G' && !bien_situado) || (type == 'K' && !bikini_on) || (type == 'D' && !shoes_on)) {
+			Pos2D new_pos = findNewBox(i, current_state.brujula);
+
+			positions.push_back(new_pos);
+		}
+	}
+
+	return positions;
+}
+
+bool ComportamientoJugador::addInterestingThing(const Pos2D &pos) {
+	bool found = false;
+
+	for (int i=0; i<interesting_points.size() && !found; ++i) {
+		if (interesting_points[i].x == pos.x && interesting_points[i].y == pos.y)
+			found = true;
+	}
+
+	if (!found) {
+		interesting_points.push_back(pos);
+	}
+
+	return found;
+}
+
+bool ComportamientoJugador::updateInterestingThings() {
+	bool found = false;
+	Pos2D current_pos(current_state.fil, current_state.col);
+	int i = 0;
+
+	while (i<interesting_points.size() && !found) {
+		if (interesting_points[i].x == current_pos.x && interesting_points[i].y == current_pos.y)
+			found = true;
+		else
+			++i;
+	}
+
+	if (found) {
+		interesting_points.erase(interesting_points.begin()+i);
+	}
+
+	return found;
 }

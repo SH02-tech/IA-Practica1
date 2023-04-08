@@ -3,6 +3,10 @@
 
 #include "comportamientos/comportamiento.hpp"
 #include <map>
+#include <vector>
+#include <cmath>
+#include <set>
+
 using namespace std;
 
 struct state{
@@ -45,25 +49,25 @@ class ComportamientoJugador : public Comportamiento{
     static const int MAX_DEPTH = 4;
     static const int NUM_SEEN = MAX_DEPTH * MAX_DEPTH - 1;
 
-    static const int MAX_REL_LOSS = 920;
-    const float ADD_FACTOR = 0.75;
-    const float FLEXITY_FACTOR = 1.7;
+    static const int MAX_REL_LOSS = 1800;
+    const float ADD_FACTOR = 0.4;
+    const float FLEXITY_FACTOR = 1.3;
     
-    // Declarar aquí las variables de estado
     Action last_action;
-    // Orientacion brujula.
     state current_state;
+    int size;
 
     bool bikini_on, shoes_on;
-    
     bool bien_situado;
+
+    int num_giros_seguidos;
 
     vector<vector<Box>> virtual_map;
     vector<vector<int>> loss_map;
 
     map<unsigned char, int> loss_base;
 
-    int size;
+    vector<Pos2D> interesting_points;
 
   public:
 
@@ -84,6 +88,8 @@ class ComportamientoJugador : public Comportamiento{
 
       this->size = size;
 
+      num_giros_seguidos = 0;
+
       // Creamos el sistema de puntuaciones
 
       for (int i=0; i<size; ++i) {
@@ -91,17 +97,17 @@ class ComportamientoJugador : public Comportamiento{
         loss_map.push_back(linea);
       }
 
-      loss_base['B'] = 35;
+      loss_base['B'] = 80;
       loss_base['A'] = 100;
       loss_base['P'] = 1e5;
       loss_base['S'] = 5;
       loss_base['T'] = 6;
       loss_base['M'] = 1e5;
-      loss_base['K'] = -20;
-      loss_base['D'] = -20;
-      loss_base['X'] = 5;
-      loss_base['G'] = -20;
-      loss_base['?'] = 2;
+      loss_base['K'] = 0;
+      loss_base['D'] = 0;
+      loss_base['X'] = 0;
+      loss_base['G'] = 0;
+      loss_base['?'] = 1;
 
       // Creamos un mapa propio.
 
@@ -135,7 +141,13 @@ class ComportamientoJugador : public Comportamiento{
 
     Orientacion bestDirection(const Sensores &sensors);
     Orientacion mostUnknownDirection(int &num_unreachable);
+    Orientacion findOrientation(Pos2D pos);
     int countReachableUnknownBoxes(int max_depth, Orientacion ori);
+
+    bool isObstacleFront(const Sensores &sensors);
+    vector<Pos2D> interestingViewingThings(const Sensores &sensors);
+    bool addInterestingThing(const Pos2D &pos);
+    bool updateInterestingThings();
 
     Action getAction(Orientacion orientation);
 
@@ -151,6 +163,7 @@ class ComportamientoJugador : public Comportamiento{
     void resetVirtualMap();
     void updateLossMap(Pos2D actual_pos);
     void resetLossMap();
+
 };
 
 #endif
