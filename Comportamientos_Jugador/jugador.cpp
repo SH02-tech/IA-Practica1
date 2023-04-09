@@ -93,6 +93,112 @@ int ComportamientoJugador::interact(Action accion, int valor){
   return false;
 }
 
+void ComportamientoJugador::printStatus(const Sensores &sensores) {
+	cout << "Posicion: fila " << sensores.posF << " columna " << sensores.posC << " ";
+
+	switch(sensores.sentido){
+		case 0: cout << "Norte" << endl; break;
+		case 1: cout << "Noreste" << endl; break;
+		case 2: cout << "Este" << endl; break;
+		case 3: cout << "Sureste" << endl; break;
+		case 4: cout << "Sur " << endl; break;
+		case 5: cout << "Suroeste" << endl; break;
+		case 6: cout << "Oeste" << endl; break;
+		case 7: cout << "Noroeste" << endl; break;
+	}
+	cout << "Terreno: ";
+	for (int i=0; i<sensores.terreno.size(); i++)
+		cout << sensores.terreno[i];
+	cout << endl;
+
+	cout << "Superficie: ";
+	for (int i=0; i<sensores.superficie.size(); i++)
+		cout << sensores.superficie[i];
+	cout << endl;
+
+	cout << "Colisión: " << sensores.colision << endl;
+	cout << "Reset: " << sensores.reset << endl;
+	cout << "Vida: " << sensores.vida << endl;
+	cout << endl;
+}
+
+void ComportamientoJugador::updateStatus(const Sensores &sensores) {
+
+	if (sensores.colision)
+		return;
+
+	if (sensores.nivel != 0) {
+		int a;
+
+		switch(last_action) {
+			case actFORWARD:
+				switch(current_state.brujula){
+					case norte: 
+						current_state.fil--; 
+						break;
+					case noreste: 
+						current_state.fil--; 
+						current_state.col++; 
+
+						break;
+					case este: 
+						current_state.col++; 
+						break;
+					case sureste: 
+						current_state.fil++; 
+						current_state.col++; 
+						break;
+					case sur: 
+						current_state.fil++; 
+						break;
+					case suroeste: 
+						current_state.fil++; 
+						current_state.col--; 
+						break;
+					case oeste: 
+						current_state.col--; 
+						break;
+					case noroeste: 
+						current_state.fil--; 
+						current_state.col--; 
+						break;
+				}
+				break;
+			case actTURN_SL:
+				a = current_state.brujula;
+				a = (a+7) % 8;
+				current_state.brujula = static_cast<Orientacion>(a);
+				break;
+			case actTURN_SR:
+				a = current_state.brujula;
+				a = (a+1) % 8;
+				current_state.brujula = static_cast<Orientacion>(a);
+				break;
+			case actTURN_BL:
+				a = current_state.brujula;
+				a = (a+5) % 8;
+				current_state.brujula = static_cast<Orientacion>(a);
+				break;
+			case actTURN_BR:
+				a = current_state.brujula;
+				a = (a+3) % 8;
+				current_state.brujula = static_cast<Orientacion>(a);
+				break;
+		}
+	} else {
+		current_state.fil = sensores.posF;
+		current_state.col = sensores.posC;
+		current_state.brujula = sensores.sentido;
+	}
+
+	if (last_action == actFORWARD)
+		num_giros_seguidos = 0;
+	else
+		++num_giros_seguidos;
+
+	updateInterestingThings();
+}
+
 void ComportamientoJugador::fillViewingMap(const Sensores &sensors) {
 	for (int i=0; i<=NUM_SEEN; ++i) {
 		Pos2D new_pos = findNewBox(i, current_state.brujula);
@@ -101,12 +207,18 @@ void ComportamientoJugador::fillViewingMap(const Sensores &sensors) {
 	}
 }
 
-void ComportamientoJugador::fillVirtualMap(const Sensores &sensors) {
-	for (int i=0; i<=NUM_SEEN; ++i) {
-		Pos2D new_pos = findNewBox(i, current_state.brujula);
-		
-		if (virtual_map[new_pos.x][new_pos.y].type == '?')
-			virtual_map[new_pos.x][new_pos.y] = Box(sensors.terreno[i], 0);
+void ComportamientoJugador::updateRealMap(Pos2D actual_pos) {
+	Pos2D displacement;
+
+	displacement.x = actual_pos.x - current_state.fil;
+	displacement.y = actual_pos.y - current_state.col;
+
+	for (int i=0; i<virtual_map.size(); ++i) {
+		for (int j=0; j<virtual_map[i].size(); ++j) {
+			if (virtual_map[i][j].type != '?') {
+				mapaResultado[i+displacement.x][j+displacement.y] = virtual_map[i][j].type;
+			}
+		}
 	}
 }
 
@@ -209,17 +321,15 @@ Orientacion ComportamientoJugador::bestDirection(const Sensores &sensores) {
 	int min_loss = numeric_limits<int>::max();
 
 	for (int i=0; i<8; ++i) {
+		Orientacion local_orientation = static_cast<Orientacion>(i);
 		float angle = (2 * PI * i) / 8;
-
 		int horizontal = round(sin(angle));
 		int vertical = round(cos(angle)); 
 
 		Pos2D new_pos;
-
 		new_pos.x = current_state.fil - vertical;
 		new_pos.y = current_state.col + horizontal;
 
-		Orientacion local_orientation = static_cast<Orientacion>(i);
 		int loss = getBoxLoss(new_pos, local_orientation, sensores.bateria);
 
 		if (local_orientation == current_state.brujula && isObstacleFront(sensores))
@@ -333,36 +443,10 @@ Orientacion ComportamientoJugador::findOrientation(Pos2D pos) {
 int ComportamientoJugador::countReachableUnknownBoxes(int max_depth, Orientacion ori) {
 	int count = 0;
 	bool stop = false;
-
 	int considered_size = (bien_situado ? size : virtual_map.size());
-
-	/*
-	for (int depth=0; depth<max_depth && !stop; ++depth) {
-		int ini = depth*depth;
-		int fin = (depth+1)*(depth+1);
-
-		for (int i=ini; i<fin; ++i) {
-			Pos2D new_pos = findNewBox(i, ori);
-
-			if (0<= min(new_pos.x, new_pos.y) && max(new_pos.x, new_pos.y) < considered_size) {
-				unsigned char type = virtual_map[new_pos.x][new_pos.y].type;
-
-				if (type == '?')
-					++count;
-				else if (type == 'P')
-					stop = true;
-			} else {
-				stop = true;
-			}
-			
-		}
-		
-	}
-	*/
 
 	int ori_number = static_cast<int>(ori);
 	float angle = (2 * PI * ori_number) / 8;
-
 	int horizontal = round(sin(angle));
 	int vertical = round(cos(angle));
 
@@ -407,6 +491,88 @@ bool ComportamientoJugador::isObstacleFront(const Sensores &sensors) {
 	}
 
 	return is_front;
+}
+
+vector<Pos2D> ComportamientoJugador::interestingViewingThings(const Sensores &sensors) {
+	vector<Pos2D> positions;
+
+	for (int i=0; i<NUM_SEEN; ++i) {
+		unsigned char type = sensors.terreno[i];
+
+		if ((type == 'G' && !bien_situado) || (type == 'K' && !bikini_on) || (type == 'D' && !shoes_on)) {
+			Pos2D new_pos = findNewBox(i, current_state.brujula);
+
+			positions.push_back(new_pos);
+		}
+	}
+
+	return positions;
+}
+
+bool ComportamientoJugador::addInterestingThing(const Pos2D &pos) {
+	bool found = false;
+
+	for (int i=0; i<interesting_points.size() && !found; ++i) {
+		if (interesting_points[i].x == pos.x && interesting_points[i].y == pos.y)
+			found = true;
+	}
+
+	if (!found) {
+		interesting_points.push_back(pos);
+	}
+
+	return found;
+}
+
+bool ComportamientoJugador::updateInterestingThings() {
+	bool found = false;
+	Pos2D current_pos(current_state.fil, current_state.col);
+	int i = 0;
+
+	while (i<interesting_points.size() && !found) {
+		if (interesting_points[i].x == current_pos.x && interesting_points[i].y == current_pos.y)
+			found = true;
+		else
+			++i;
+	}
+
+	if (found) {
+		interesting_points.erase(interesting_points.begin()+i);
+	}
+
+	return found;
+}
+
+Action ComportamientoJugador::getAction(Orientacion orientation) {
+	Action action = actIDLE;
+
+	int rel_diff = (static_cast<int>(orientation) - static_cast<int>(current_state.brujula) + 8) % 8;
+
+	switch (rel_diff) {
+		case 0:
+			action = actFORWARD;
+			break;
+		case 1:
+			action = actTURN_SR;
+			break;
+		case 2:
+		case 3:
+			action = actTURN_BR;
+			break;
+		case 4:
+		case 5:
+		case 6:
+			action = actTURN_BL;
+			break;
+		case 7:
+			action = actTURN_SL;
+			break;
+		default:
+			action = actIDLE;
+			break;
+	}
+
+	return action;
 }
 
 int ComportamientoJugador::getBoxLoss(Pos2D pos, Orientacion orientation, int battery_level) {
@@ -471,7 +637,7 @@ int ComportamientoJugador::getBoxLoss(Pos2D pos, Orientacion orientation, int ba
 
 			switch(current_type) {
 				case 'A':
-					the_rotation_loss = (bikini_on ? 70 : 90);
+					the_rotation_loss = (bikini_on ? 70 : 85);
 					break;
 				case 'B':
 					the_rotation_loss = (shoes_on ? 30 : 55);
@@ -553,174 +719,12 @@ void ComportamientoJugador::fillViewingLoss() {
 	}
 }
 
-Action ComportamientoJugador::getAction(Orientacion orientation) {
-	Action action = actIDLE;
-
-	int rel_diff = (static_cast<int>(orientation) - static_cast<int>(current_state.brujula) + 8) % 8;
-
-	switch (rel_diff) {
-		case 0:
-			action = actFORWARD;
-			break;
-		case 1:
-			action = actTURN_SR;
-			break;
-		case 2:
-		case 3:
-			action = actTURN_BR;
-			break;
-		case 4:
-		case 5:
-		case 6:
-			action = actTURN_BL;
-			break;
-		case 7:
-			action = actTURN_SL;
-			break;
-		default:
-			action = actIDLE;
-			break;
-	}
-
-	return action;
-}
-
-void ComportamientoJugador::printStatus(const Sensores &sensores) {
-	cout << "Posicion: fila " << sensores.posF << " columna " << sensores.posC << " ";
-
-	switch(sensores.sentido){
-		case 0: cout << "Norte" << endl; break;
-		case 1: cout << "Noreste" << endl; break;
-		case 2: cout << "Este" << endl; break;
-		case 3: cout << "Sureste" << endl; break;
-		case 4: cout << "Sur " << endl; break;
-		case 5: cout << "Suroeste" << endl; break;
-		case 6: cout << "Oeste" << endl; break;
-		case 7: cout << "Noroeste" << endl; break;
-	}
-	cout << "Terreno: ";
-	for (int i=0; i<sensores.terreno.size(); i++)
-		cout << sensores.terreno[i];
-	cout << endl;
-
-	cout << "Superficie: ";
-	for (int i=0; i<sensores.superficie.size(); i++)
-		cout << sensores.superficie[i];
-	cout << endl;
-
-	cout << "Colisión: " << sensores.colision << endl;
-	cout << "Reset: " << sensores.reset << endl;
-	cout << "Vida: " << sensores.vida << endl;
-	cout << endl;
-}
-
-void ComportamientoJugador::updateStatus(const Sensores &sensores) {
-
-	if (sensores.colision)
-		return;
-
-	if (sensores.nivel != 0) {
-		int a;
-
-		switch(last_action) {
-			case actFORWARD:
-				switch(current_state.brujula){
-					case norte: 
-						current_state.fil--; 
-						break;
-					case noreste: 
-						current_state.fil--; 
-						current_state.col++; 
-
-						break;
-					case este: 
-						current_state.col++; 
-						break;
-					case sureste: 
-						current_state.fil++; 
-						current_state.col++; 
-						break;
-					case sur: 
-						current_state.fil++; 
-						break;
-					case suroeste: 
-						current_state.fil++; 
-						current_state.col--; 
-						break;
-					case oeste: 
-						current_state.col--; 
-						break;
-					case noroeste: 
-						current_state.fil--; 
-						current_state.col--; 
-						break;
-				}
-				break;
-			case actTURN_SL:
-				a = current_state.brujula;
-				a = (a+7) % 8;
-				current_state.brujula = static_cast<Orientacion>(a);
-				break;
-			case actTURN_SR:
-				a = current_state.brujula;
-				a = (a+1) % 8;
-				current_state.brujula = static_cast<Orientacion>(a);
-				break;
-			case actTURN_BL:
-				a = current_state.brujula;
-				a = (a+5) % 8;
-				current_state.brujula = static_cast<Orientacion>(a);
-				break;
-			case actTURN_BR:
-				a = current_state.brujula;
-				a = (a+3) % 8;
-				current_state.brujula = static_cast<Orientacion>(a);
-				break;
-		}
-	} else {
-		current_state.fil = sensores.posF;
-		current_state.col = sensores.posC;
-		current_state.brujula = sensores.sentido;
-	}
-
-	if (last_action == actFORWARD)
-		num_giros_seguidos = 0;
-	else
-		++num_giros_seguidos;
-
-	updateInterestingThings();
-}
-
-void ComportamientoJugador::updateRealMap(Pos2D actual_pos) {
-	Pos2D displacement;
-
-	displacement.x = actual_pos.x - current_state.fil;
-	displacement.y = actual_pos.y - current_state.col;
-
-	for (int i=0; i<virtual_map.size(); ++i) {
-		for (int j=0; j<virtual_map[i].size(); ++j) {
-			if (virtual_map[i][j].type != '?') {
-				mapaResultado[i+displacement.x][j+displacement.y] = virtual_map[i][j].type;
-			}
-		}
-	}
-}
-
-void ComportamientoJugador::updateLossMap(Pos2D actual_pos) {
-	if (!bien_situado)
-		return;
-	
-	Pos2D displacement;
-
-	displacement.x = actual_pos.x - current_state.fil;
-	displacement.y = actual_pos.y - current_state.col;
-
-	for (int i=0; i<virtual_map.size(); ++i) {
-		for (int j=0; j<virtual_map[i].size(); ++j) {
-			if (virtual_map[i][j].type != '?') {
-				loss_map[i+displacement.x][j+displacement.y] += virtual_map[i][j].rel_loss;
-			}
-		}
+void ComportamientoJugador::fillVirtualMap(const Sensores &sensors) {
+	for (int i=0; i<=NUM_SEEN; ++i) {
+		Pos2D new_pos = findNewBox(i, current_state.brujula);
+		
+		if (virtual_map[new_pos.x][new_pos.y].type == '?')
+			virtual_map[new_pos.x][new_pos.y] = Box(sensors.terreno[i], 0);
 	}
 }
 
@@ -748,60 +752,28 @@ void ComportamientoJugador::resetVirtualMap() {
 	}
 }
 
+void ComportamientoJugador::updateLossMap(Pos2D actual_pos) {
+	if (!bien_situado)
+		return;
+	
+	Pos2D displacement;
+
+	displacement.x = actual_pos.x - current_state.fil;
+	displacement.y = actual_pos.y - current_state.col;
+
+	for (int i=0; i<virtual_map.size(); ++i) {
+		for (int j=0; j<virtual_map[i].size(); ++j) {
+			if (virtual_map[i][j].type != '?') {
+				loss_map[i+displacement.x][j+displacement.y] += virtual_map[i][j].rel_loss;
+			}
+		}
+	}
+}
+
 void ComportamientoJugador::resetLossMap() {
 	for (int i=0; i<loss_map.size(); ++i) {
 		for (int j=0; j<loss_map[i].size(); ++j) {
 			loss_map[i][j] = 0;
 		}
 	}
-}
-
-vector<Pos2D> ComportamientoJugador::interestingViewingThings(const Sensores &sensors) {
-	vector<Pos2D> positions;
-
-	for (int i=0; i<NUM_SEEN; ++i) {
-		unsigned char type = sensors.terreno[i];
-
-		if ((type == 'G' && !bien_situado) || (type == 'K' && !bikini_on) || (type == 'D' && !shoes_on)) {
-			Pos2D new_pos = findNewBox(i, current_state.brujula);
-
-			positions.push_back(new_pos);
-		}
-	}
-
-	return positions;
-}
-
-bool ComportamientoJugador::addInterestingThing(const Pos2D &pos) {
-	bool found = false;
-
-	for (int i=0; i<interesting_points.size() && !found; ++i) {
-		if (interesting_points[i].x == pos.x && interesting_points[i].y == pos.y)
-			found = true;
-	}
-
-	if (!found) {
-		interesting_points.push_back(pos);
-	}
-
-	return found;
-}
-
-bool ComportamientoJugador::updateInterestingThings() {
-	bool found = false;
-	Pos2D current_pos(current_state.fil, current_state.col);
-	int i = 0;
-
-	while (i<interesting_points.size() && !found) {
-		if (interesting_points[i].x == current_pos.x && interesting_points[i].y == current_pos.y)
-			found = true;
-		else
-			++i;
-	}
-
-	if (found) {
-		interesting_points.erase(interesting_points.begin()+i);
-	}
-
-	return found;
 }
