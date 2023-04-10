@@ -51,11 +51,11 @@ class ComportamientoJugador : public Comportamiento{
 
     static const int BATTERY_LOWER_BOUND = 600;
     static const int BATTERY_UPPER_BOUND = 3000;
-    static const int MAX_RECHARGE_INSTANTS = 20;
+    static const int MAX_RECHARGE_INSTANTS = 70;
 
     static const int MAX_REL_LOSS = 1800;
     const float ADD_FACTOR = 0.5;
-    const float FLEXITY_FACTOR = 1.3;
+    const float FLEXITY_FACTOR = 1.4;
     
     Action last_action;
     state current_state;
@@ -102,8 +102,8 @@ class ComportamientoJugador : public Comportamiento{
         loss_map.push_back(linea);
       }
 
-      loss_base['B'] = 80;
-      loss_base['A'] = 100;
+      loss_base['B'] = 300;
+      loss_base['A'] = 600;
       loss_base['P'] = 1e5;
       loss_base['S'] = 5;
       loss_base['T'] = 6;
