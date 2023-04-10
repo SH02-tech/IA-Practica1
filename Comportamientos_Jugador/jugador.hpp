@@ -49,8 +49,12 @@ class ComportamientoJugador : public Comportamiento{
     static const int MAX_DEPTH = 4;
     static const int NUM_SEEN = MAX_DEPTH * MAX_DEPTH - 1;
 
+    static const int BATTERY_LOWER_BOUND = 600;
+    static const int BATTERY_UPPER_BOUND = 3000;
+    static const int MAX_RECHARGE_INSTANTS = 20;
+
     static const int MAX_REL_LOSS = 1800;
-    const float ADD_FACTOR = 0.4;
+    const float ADD_FACTOR = 0.5;
     const float FLEXITY_FACTOR = 1.3;
     
     Action last_action;
@@ -60,7 +64,7 @@ class ComportamientoJugador : public Comportamiento{
     bool bikini_on, shoes_on;
     bool bien_situado;
 
-    int num_giros_seguidos;
+    int num_giros_seguidos, contador_recarga;
 
     vector<vector<Box>> virtual_map;
     vector<vector<int>> loss_map;
@@ -89,6 +93,7 @@ class ComportamientoJugador : public Comportamiento{
       this->size = size;
 
       num_giros_seguidos = 0;
+      contador_recarga = 0;
 
       // Creamos el sistema de puntuaciones
 
