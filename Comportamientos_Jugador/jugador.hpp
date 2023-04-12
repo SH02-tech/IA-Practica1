@@ -54,6 +54,7 @@ class ComportamientoJugador : public Comportamiento{
     static const int MAX_RECHARGE_INSTANTS = 70;
 
     static const int MAX_REL_LOSS = 1800;
+    static const int MAX_ORIENTATION_LOSS = 7000;
     const float ADD_FACTOR = 0.5;
     const float FLEXITY_FACTOR = 1.4;
     
@@ -159,6 +160,7 @@ class ComportamientoJugador : public Comportamiento{
     // Mapa Loss
 
     int getBoxLoss(Pos2D pos, Orientacion orientation, int battery_level);
+    int getOrientationLoss(int max_depth, Orientacion orientation, int battery_level);
     void fillViewingLoss();
 
     // Mapa Virtual
