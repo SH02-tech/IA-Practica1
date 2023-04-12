@@ -745,16 +745,6 @@ int ComportamientoJugador::getOrientationLoss(int max_depth, Orientacion orienta
 }
 
 void ComportamientoJugador::fillViewingLoss() {
-	
-	/*
-	for (int i=0; i<NUM_SEEN; ++i) {
-		Pos2D new_pos = findNewBox(i, current_state.brujula);
-		int depth = max(abs(new_pos.x - current_state.fil), abs(new_pos.y - current_state.col));
-
-		virtual_map[new_pos.x][new_pos.y].rel_loss += (MAX_DEPTH - depth);
-	}
-	*/
-	
 	for (int depth=0; depth<MAX_DEPTH+1; ++depth) {
 		for (int i=current_state.fil-depth; i<=current_state.fil+depth; ++i) {
 			for (int j=current_state.col-depth; j<=current_state.col+depth; ++j) {
@@ -764,10 +754,7 @@ void ComportamientoJugador::fillViewingLoss() {
 				}
 			}
 		}
-	}
-
-	// virtual_map[current_state.fil][current_state.col].rel_loss++;
-	
+	}	
 }
 
 void ComportamientoJugador::fillVirtualMap(const Sensores &sensors) {
